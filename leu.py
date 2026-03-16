@@ -206,27 +206,45 @@ def detect_events(df):
 
 
 def parse_data(text):
-    pat = re.compile(
+    # Accepts tab-separated, comma-separated, semicolon-separated, or mixed whitespace.
+    # Skips header rows and any line that doesn't contain a recognisable date+time.
+    date_pat = re.compile(
         r"(\d{1,2}[.\-/]\w{3,9}[.\-/]\d{4})\s+(\d{2}:\d{2}:\d{2})"
-        r"\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)"
     )
     rows = []
-    for line in text.strip().splitlines():
-        m = pat.search(line.strip())
-        if m:
-            ds, ts, bd, hl, bp = m.groups()
-            ds = ds.replace(".", " ").replace("-", " ").replace("/", " ")
-            try:
-                rows.append({
-                    "RigTime":  pd.to_datetime(f"{ds} {ts}", dayfirst=True),
-                    "BitDepth": float(bd),
-                    "HookLoad": float(hl),
-                    "BlockPos": float(bp),
-                })
-            except Exception:
-                pass
+    for raw_line in text.strip().splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        dm = date_pat.search(line)
+        if not dm:
+            continue  # header or non-data row — skip silently
+        ds, ts = dm.groups()
+        # Extract everything after the timestamp and split on any separator
+        after = line[dm.end():].strip()
+        # Replace commas/semicolons with spaces then split on whitespace
+        parts = re.split(r"[,;	\s]+", after.replace(",", " ").replace(";", " "))
+        parts = [p.strip() for p in parts if p.strip()]
+        if len(parts) < 3:
+            continue
+        try:
+            bd, hl, bp = float(parts[0]), float(parts[1]), float(parts[2])
+            ds_clean = ds.replace(".", " ").replace("-", " ").replace("/", " ")
+            rows.append({
+                "RigTime":  pd.to_datetime(f"{ds_clean} {ts}", dayfirst=True),
+                "BitDepth": bd,
+                "HookLoad": hl,
+                "BlockPos": bp,
+            })
+        except Exception:
+            pass
     if not rows:
-        raise ValueError("No rows parsed — check format: Date Time BitDepth HookLoad BlockPos")
+        raise ValueError(
+            "No rows parsed.\n\n"
+            "Supported formats: tab-separated, CSV (comma), or space-separated.\n"
+            "Expected columns: RigTime | BitDepth | HookLoad | BlockPos\n"
+            "Example row:  15.Mar.2026 19:30:00,1879.70,3.50,1.40"
+        )
     return (pd.DataFrame(rows)
               .sort_values("RigTime")
               .drop_duplicates("RigTime")
@@ -801,4 +819,4 @@ try:
 except Exception as e:
     st.error(f"**Parse error:** {e}")
     st.code(str(e))
-    st.info("Expected format: `DD.Mon.YYYY HH:MM:SS  BitDepth  HookLoad  BlockPos`")
+    st.info("Expected format per row: `DD.Mon.YYYY HH:MM:SS,BitDepth,HookLoad,BlockPos` — tab, comma, or space separated. Header row is optional and will be skipped automatically.")
