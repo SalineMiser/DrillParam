@@ -17,33 +17,158 @@ from datetime import datetime
 import openpyxl
 
 # ── Page config ────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Drilling Log", page_icon="🛢️",
+st.set_page_config(page_title="Drilling Log Viewer", page_icon=None,
                    layout="wide", initial_sidebar_state="expanded")
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-html,body,[class*="css"]{font-family:"Inter","Segoe UI",sans-serif;}
-.stApp{background:#f0f4f8;}
-[data-testid="stSidebar"]{background:#fff;border-right:1px solid #d1dbe8;}
-[data-testid="stSidebar"] *{color:#344055!important;}
-[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3{color:#1a2535!important;font-weight:600!important;}
-[data-testid="stMetric"]{background:#fff;border:1px solid #d1dbe8;border-radius:12px;
-  padding:12px 16px;box-shadow:0 1px 4px rgba(0,0,0,.05);}
-[data-testid="stMetricValue"]{color:#1558a0!important;font-size:1.35rem!important;font-weight:700!important;}
-[data-testid="stMetricLabel"]{color:#64748b!important;font-size:.78rem!important;}
-.hdr{background:linear-gradient(120deg,#fff 0%,#e8f0fa 100%);border:1px solid #d1dbe8;
-  border-radius:14px;padding:18px 28px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.05);}
-.hdr h1{color:#1a2535;font-size:1.65rem;margin:0;font-weight:700;}
-.hdr p{color:#64748b;margin:4px 0 0;font-size:.88rem;}
-.sec{color:#1a2535;font-size:.95rem;font-weight:600;padding-bottom:4px;
-  border-bottom:2px solid #d1dbe8;margin-bottom:10px;}
-[data-testid="stExpander"]{background:#fff;border:1px solid #d1dbe8!important;border-radius:10px;}
-.stTabs [data-baseweb="tab-list"]{background:#fff;border-radius:10px;border:1px solid #d1dbe8;}
-.stTabs [data-baseweb="tab"]{color:#64748b;}
-.stTabs [aria-selected="true"]{color:#1558a0!important;border-bottom:2px solid #1558a0!important;}
-::-webkit-scrollbar{width:5px;height:5px;}
-::-webkit-scrollbar-thumb{background:#c0ccd8;border-radius:4px;}
+/* ── Typography & base ───────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+html, body, [class*="css"] {
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    letter-spacing: -0.01em;
+}
+.stApp { background: #f0f4f8; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: #ffffff;
+    border-right: 1px solid #d1dbe8;
+}
+[data-testid="stSidebar"] * { color: #344055 !important; }
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #1a2535 !important;
+    font-weight: 600 !important;
+    font-size: .85rem !important;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+/* ── Metric cards ────────────────────────────────────────────────────────── */
+[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid #d1dbe8;
+    border-radius: 8px;
+    padding: 14px 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+[data-testid="stMetricValue"] {
+    color: #1558a0 !important;
+    font-size: 1.3rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -.02em;
+}
+[data-testid="stMetricLabel"] {
+    color: #64748b !important;
+    font-size: .72rem !important;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-weight: 500 !important;
+}
+
+/* ── Top navigation bar ──────────────────────────────────────────────────── */
+.top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #ffffff;
+    border: 1px solid #d1dbe8;
+    border-radius: 8px;
+    padding: 14px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.04);
+}
+.top-bar-left { display: flex; align-items: baseline; gap: 14px; }
+.top-bar-author {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #1558a0;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    border-right: 1px solid #d1dbe8;
+    padding-right: 14px;
+}
+.top-bar-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1a2535;
+    letter-spacing: -.02em;
+}
+.top-bar-subtitle {
+    font-size: .78rem;
+    color: #94a3b8;
+    font-weight: 400;
+    letter-spacing: .01em;
+}
+.top-bar-right {
+    font-size: .72rem;
+    color: #94a3b8;
+    text-align: right;
+    line-height: 1.6;
+    font-weight: 400;
+}
+
+/* ── Section headers ─────────────────────────────────────────────────────── */
+.sec {
+    color: #1a2535;
+    font-size: .78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    padding-bottom: 6px;
+    border-bottom: 1.5px solid #d1dbe8;
+    margin-bottom: 12px;
+}
+
+/* ── Expanders ───────────────────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    background: #ffffff;
+    border: 1px solid #d1dbe8 !important;
+    border-radius: 8px;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    background: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #d1dbe8;
+    gap: 0;
+}
+.stTabs [data-baseweb="tab"] {
+    color: #64748b;
+    font-size: .8rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 8px 20px;
+}
+.stTabs [aria-selected="true"] {
+    color: #1558a0 !important;
+    border-bottom: 2px solid #1558a0 !important;
+    font-weight: 600 !important;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.stButton > button {
+    font-size: .8rem;
+    font-weight: 500;
+    letter-spacing: .02em;
+    border-radius: 6px;
+}
+
+/* ── Download buttons ────────────────────────────────────────────────────── */
+[data-testid="stDownloadButton"] button {
+    font-size: .78rem;
+    font-weight: 500;
+    letter-spacing: .02em;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #c0ccd8; border-radius: 4px; }
 </style>""", unsafe_allow_html=True)
 
 # ── Activity colours ───────────────────────────────────────────────────────────
@@ -378,36 +503,45 @@ def build_mud_log(df, param_cols, depth_col, events_df,
 #  SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## ⚙️ Controls")
+    st.markdown("## Controls")
     st.markdown("---")
-    st.markdown("### 📐 Display")
+    st.markdown("### Display")
     chart_height = st.slider("Chart height (px)", 600, 3000, 1500, 50)
     ds_n         = st.slider("Max points",         500, 8000, 3000, 100)
     show_bands   = st.toggle("Activity bands", True)
 
     st.markdown("---")
-    st.markdown("### 🎯 Activity Thresholds")
+    st.markdown("### Activity Thresholds")
     hl_trip = st.number_input("Tripping HL (t)",      value=35.0, step=0.5)
     hl_conn = st.number_input("Connection HL (t)",    value=10.0, step=0.5)
     dd_thr  = st.number_input("Drilling depth Δ (m)", value=0.05, step=0.01)
 
     st.markdown("---")
-    st.markdown("<div style='color:#94a3b8;font-size:.72rem;text-align:center'>"
+    st.markdown("<div style='color:#94a3b8;font-size:.7rem;text-align:center;"
+                "letter-spacing:.04em;text-transform:uppercase'>"
                 "Drilling Log Viewer v4.0</div>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  HEADER
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
-<div class='hdr'>
-  <h1>🛢️ Drilling Real-Time Log Viewer</h1>
-  <p>Mud-log vertical strip charts · Any Excel or CSV format · Persistent file storage</p>
+<div class="top-bar">
+  <div class="top-bar-left">
+    <span class="top-bar-author">Saleh Aliyev</span>
+    <div>
+      <span class="top-bar-title">Drilling Real-Time Log Viewer</span>
+      <span class="top-bar-subtitle">&nbsp;&nbsp;Mud-log strip charts &middot; Excel &amp; CSV &middot; Persistent storage</span>
+    </div>
+  </div>
+  <div class="top-bar-right">
+    Well: 48 Bibiheybet 3596<br>Field: Bibiheybet
+  </div>
 </div>""", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  FILE MANAGEMENT  (upload + stored)
 # ═══════════════════════════════════════════════════════════════════════════════
-tab_up, tab_stored = st.tabs(["📤  Upload File", "🗄️  Stored Files"])
+tab_up, tab_stored = st.tabs(["Upload File", "Stored Files"])
 
 active_bytes = None
 active_name  = None
@@ -421,25 +555,25 @@ with tab_up:
         raw = uf.read()
         store_file(uf.name, raw)
         active_bytes, active_name = raw, uf.name
-        st.success(f"✅ **{uf.name}** saved to server storage.")
+        st.success(f"**{uf.name}** saved to server storage.")
 
 with tab_stored:
     files = list_stored()
     if not files:
-        st.info("No files stored yet. Upload one above.")
+        st.info("No files stored yet. Upload a file using the tab above.")
     else:
-        st.caption(f"{len(files)} file(s) on server — click to load, 🗑 to delete.")
+        st.caption(f"{len(files)} file(s) stored on server — click a row to load, or delete.")
         for safe, meta in files:
             ca, cb = st.columns([6,1])
             with ca:
-                label = (f"📄 **{meta['original']}**  ·  "
+                label = (f"**{meta['original']}**  ·  "
                          f"{meta['saved'][:16]}  ·  {meta['size']//1024} KB")
                 if st.button(label, key=f"ld_{safe}", use_container_width=True):
                     active_bytes = read_stored(safe)
                     active_name  = meta["original"]
-                    st.success(f"Loaded **{meta['original']}**")
+                    st.success(f"Loaded: **{meta['original']}**")
             with cb:
-                if st.button("🗑", key=f"dl_{safe}", help="Delete"):
+                if st.button("×", key=f"dl_{safe}", help="Delete this file"):
                     del_stored(safe); st.rerun()
 
 # Auto-load most-recent file if nothing chosen yet
@@ -449,7 +583,7 @@ if active_bytes is None:
         safe, meta = files[0]
         active_bytes = read_stored(safe)
         active_name  = meta["original"]
-        st.info(f"📂 Auto-loaded most recent file: **{meta['original']}**")
+        st.info(f"Auto-loaded most recent file: **{meta['original']}**")
     else:
         st.warning("Upload a file to get started.")
         st.stop()
@@ -474,7 +608,7 @@ bp_col    = find_col(df, r'block.?pos', r'blockpos')
 # ═══════════════════════════════════════════════════════════════════════════════
 #  COLUMN SELECTOR + UNITS EDITOR
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='sec'>🔧 Column Setup</div>", unsafe_allow_html=True)
+st.markdown("<div class='sec'>Column Setup</div>", unsafe_allow_html=True)
 cc1, cc2, cc3 = st.columns(3)
 
 with cc1:
@@ -498,7 +632,7 @@ if depth_col is None:
 
 # ── Units editor ──────────────────────────────────────────────────────────────
 # Pre-fill with units detected from the file; user can override any of them.
-with st.expander("📐 Units (optional — shown in strip headers)", expanded=False):
+with st.expander("Units — optional, shown in strip headers", expanded=False):
     st.caption(
         "Units were **auto-detected from the file** where available. "
         "Override any value here — changes apply immediately to all chart labels."
@@ -541,20 +675,20 @@ d_min  = df["RigTime"].iloc[0].strftime("%d %b %H:%M")
 d_max  = df["RigTime"].iloc[-1].strftime("%d %b %H:%M")
 
 c1,c2,c3,c4,c5,c6 = st.columns(6)
-c1.metric("⏱ Period",        f"{t_hrs:.1f} hr",   delta=f"{d_min} → {d_max}")
-c2.metric("📏 Depth Range",   f"{df[depth_col].min():.0f} – {df[depth_col].max():.0f} m",
+c1.metric("Period",        f"{t_hrs:.1f} hr",   delta=f"{d_min} → {d_max}")
+c2.metric("Depth Range",   f"{df[depth_col].min():.0f} – {df[depth_col].max():.0f} m",
                                delta=f"{drl:.1f} m drilled")
-c3.metric("🔩 Avg ROP",       f"{rop:.2f} m/hr")
-c4.metric("⚖ Max Hook Load",  f"{max_hl:.1f} t")
-c5.metric("🔗 Connections",   str(n_conn))
-c6.metric("📊 Channels",      str(len(param_cols)), delta=f"{len(df):,} rows")
+c3.metric("Avg ROP",       f"{rop:.2f} m/hr")
+c4.metric("Max Hook Load",  f"{max_hl:.1f} t")
+c5.metric("Connections",   str(n_conn))
+c6.metric("Channels",      str(len(param_cols)), delta=f"{len(df):,} rows")
 
 st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  MUD LOG CHART
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='sec'>📊 Mud Log — Vertical Strip Chart</div>",
+st.markdown("<div class='sec'>Mud Log — Vertical Strip Chart</div>",
             unsafe_allow_html=True)
 st.caption(
     "**Y axis = Time** (oldest at top, newest at bottom, same scale across all strips)  ·  "
@@ -579,7 +713,7 @@ if evs is not None:
     left, right = st.columns([1, 2.4])
 
     with left:
-        st.markdown("<div class='sec'>🥧 Activity Breakdown</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sec'>Activity Breakdown</div>", unsafe_allow_html=True)
         agg = (evs.groupby("activity")["duration_min"].sum()
                .reset_index().sort_values("duration_min", ascending=False))
         agg["pct"] = (agg["duration_min"]/agg["duration_min"].sum()*100).round(1)
@@ -623,7 +757,7 @@ if evs is not None:
         )
 
     with right:
-        st.markdown("<div class='sec'>📋 Event Log</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sec'>Event Log</div>", unsafe_allow_html=True)
         badge = {"Drilling":"#dcfce7|#166534","Tripping In":"#dbeafe|#1e40af",
                  "Tripping Out":"#cffafe|#0e7490","Hoisting":"#ede9fe|#5b21b6",
                  "Connection":"#fef9c3|#854d0e","Slips / Static":"#f1f5f9|#475569"}
@@ -654,13 +788,13 @@ if evs is not None:
             f"</tr></thead><tbody>{rows_h}</tbody></table></div>",
             unsafe_allow_html=True,
         )
-        st.download_button("⬇ Events CSV", evs.to_csv(index=False).encode(),
+        st.download_button("Download Events CSV", evs.to_csv(index=False).encode(),
                            "events.csv", "text/csv")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  RAW DATA
 # ═══════════════════════════════════════════════════════════════════════════════
-with st.expander("🗂 Raw Data Preview & Download", expanded=False):
+with st.expander("Raw Data Preview & Download", expanded=False):
     st.dataframe(df.head(500), use_container_width=True, height=280)
-    st.download_button("⬇ Full CSV", df.to_csv(index=False).encode(),
+    st.download_button("Download Full CSV", df.to_csv(index=False).encode(),
                        "rig_data.csv", "text/csv")
