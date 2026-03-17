@@ -503,8 +503,16 @@ def build_mud_log(df, param_cols, depth_col, events_df,
 #  SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## Controls")
-    st.markdown("---")
+    st.markdown("""
+<div style='padding:18px 4px 14px 4px;border-bottom:1px solid #d1dbe8;margin-bottom:6px;'>
+  <div style='font-size:.65rem;font-weight:600;color:#94a3b8;text-transform:uppercase;
+              letter-spacing:.08em;margin-bottom:4px;'>Engineer</div>
+  <div style='font-size:1rem;font-weight:700;color:#1558a0;letter-spacing:-.01em;'>
+              Saleh Aliyev</div>
+  <div style='font-size:.72rem;color:#94a3b8;margin-top:2px;letter-spacing:.01em;'>
+              Drilling Real-Time Log Viewer</div>
+</div>""", unsafe_allow_html=True)
+
     st.markdown("### Display")
     chart_height = st.slider("Chart height (px)", 600, 3000, 1500, 50)
     ds_n         = st.slider("Max points",         500, 8000, 3000, 100)
@@ -516,25 +524,13 @@ with st.sidebar:
     hl_conn = st.number_input("Connection HL (t)",    value=10.0, step=0.5)
     dd_thr  = st.number_input("Drilling depth Δ (m)", value=0.05, step=0.01)
 
-    st.markdown("---")
-    st.markdown("<div style='color:#94a3b8;font-size:.7rem;text-align:center;"
-                "letter-spacing:.04em;text-transform:uppercase'>"
-                "Drilling Log Viewer v4.0</div>", unsafe_allow_html=True)
-
 # ═══════════════════════════════════════════════════════════════════════════════
 #  HEADER
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="top-bar">
   <div class="top-bar-left">
-    <span class="top-bar-author">Saleh Aliyev</span>
-    <div>
-      <span class="top-bar-title">Drilling Real-Time Log Viewer</span>
-      <span class="top-bar-subtitle">&nbsp;&nbsp;Mud-log strip charts &middot; Excel &amp; CSV &middot; Persistent storage</span>
-    </div>
-  </div>
-  <div class="top-bar-right">
-    Well: 48 Bibiheybet 3596<br>Field: Bibiheybet
+    <span class="top-bar-title">Drilling Real-Time Log Viewer</span>
   </div>
 </div>""", unsafe_allow_html=True)
 
@@ -690,13 +686,7 @@ st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='sec'>Mud Log — Vertical Strip Chart</div>",
             unsafe_allow_html=True)
-st.caption(
-    "**Y axis = Time** (oldest at top, newest at bottom, same scale across all strips)  ·  "
-    "**X axis = Parameter value** (scale shown above each strip)  ·  "
-    "**Rightmost strip = Bit Depth**  ·  "
-    "Coloured bands = detected drilling activity  ·  "
-    "Use the scroll wheel or toolbar to zoom into any time window"
-)
+
 
 fig = build_mud_log(df, param_cols, depth_col, evs,
                     show_bands, chart_height, ds_n, units)
