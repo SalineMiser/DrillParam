@@ -144,10 +144,15 @@ def smart_parse(data:bytes, filename:str) -> pd.DataFrame:
         headers.pop()
     n_cols = len(headers)
 
-    # Determine data start (skip units row if present)
+    # Determine data start (skip units row if present) — also capture units
     data_start = 1
+    detected_units = {}   # col_name -> unit string
     if len(all_rows) > 1 and _looks_like_units(all_rows[1][:n_cols]):
         data_start = 2
+        for i, h in enumerate(headers):
+            uval = all_rows[1][i] if i < len(all_rows[1]) else None
+            if uval is not None and str(uval).strip() not in ("None", ""):
+                detected_units[h] = str(uval).strip()
 
     # Build DataFrame
     rows = [list(r)[:n_cols] for r in all_rows[data_start:] if any(v is not None for v in r)]
@@ -176,7 +181,7 @@ def smart_parse(data:bytes, filename:str) -> pd.DataFrame:
 
     if len(df) < 2:
         raise ValueError("Fewer than 2 valid rows after parsing — check your file.")
-    return df
+    return df, detected_units
 
 def find_col(df, *patterns):
     for p in patterns:
@@ -229,17 +234,19 @@ def detect_events(df, depth_col):
 #   • Coloured horizontal bands = activity intervals
 # ═══════════════════════════════════════════════════════════════════════════════
 def build_mud_log(df, param_cols, depth_col, events_df,
-                  show_bands, height, ds_n):
+                  show_bands, height, ds_n, units=None):
 
-    n = len(param_cols)          # number of parameter strips
-    total_cols = n + 1           # +1 for depth strip on right
+    if units is None:
+        units = {}
 
-    # Downsample
+    n          = len(param_cols)
+    total_cols = 1 + n            # col 1 = Bit Depth, cols 2..N+1 = params
+
     step = max(1, len(df)//ds_n)
     ds   = df.iloc[::step].copy()
 
-    # Column widths: param strips equal, depth strip slightly narrower
-    widths = [1.0]*n + [0.85]
+    # Depth strip slightly wider, param strips equal
+    widths = [0.85] + [1.0]*n
 
     fig = make_subplots(
         rows=1, cols=total_cols,
@@ -248,33 +255,77 @@ def build_mud_log(df, param_cols, depth_col, events_df,
         horizontal_spacing=0.008,
     )
 
-    # ── Activity bands (horizontal rectangles = time bands) ───────────────────
+    # ── Activity bands ────────────────────────────────────────────────────────
     if show_bands and events_df is not None:
         for _, ev in events_df.iterrows():
-            col = ACT.get(ev["activity"], "#64748b")
+            band_color = ACT.get(ev["activity"], "#64748b")
             for ci in range(1, total_cols+1):
                 fig.add_hrect(y0=ev["start_time"], y1=ev["end_time"],
-                              fillcolor=col, opacity=0.07, line_width=0,
+                              fillcolor=band_color, opacity=0.07, line_width=0,
                               row=1, col=ci)
 
-    # ── Parameter strips ──────────────────────────────────────────────────────
+    # helper: build the header label  "Name (unit)"  or just "Name"
+    def _label(col_name, color=None):
+        u    = units.get(col_name, "").strip()
+        unit = f" ({u})" if u else ""
+        name = f"{col_name}{unit}"
+        if color:
+            return f"<b style='color:{color}'>{name}</b>"
+        return f"<b>{name}</b>"
+
+    # ── Col 1: Bit Depth ──────────────────────────────────────────────────────
+    d_series = ds[depth_col].dropna()
+    if not d_series.empty:
+        d_min = float(d_series.min()); d_max = float(d_series.max())
+        d_unit = units.get(depth_col, "").strip()
+        hover_unit = f" {d_unit}" if d_unit else ""
+
+        fig.add_trace(go.Scatter(
+            x=ds[depth_col], y=ds["RigTime"],
+            mode="lines",
+            name=_label(depth_col).replace("<b>","").replace("</b>",""),
+            line=dict(color="#1a2535", width=2.5),
+            fill="tozerox",
+            fillcolor="rgba(26,37,53,0.06)",
+            hovertemplate=(f"<b>{depth_col}</b><br>"
+                           f"%{{y|%H:%M:%S}}<br>%{{x:.2f}}{hover_unit}<extra></extra>"),
+        ), row=1, col=1)
+
+        fig.update_xaxes(
+            range=[d_min-5, d_max+5],
+            tickfont=dict(size=8, color="#94a3b8"),
+            gridcolor="#e8eef4", gridwidth=1,
+            linecolor="#d1dbe8", zeroline=False,
+            showgrid=True, side="top",
+            title_text=(_label(depth_col) + "<br>"
+                        f"<span style='font-size:9px;color:#94a3b8'>"
+                        f"{d_min:.0f} … {d_max:.0f}</span>"),
+            title_font=dict(size=10, color="#1a2535"),
+            title_standoff=2,
+            row=1, col=1,
+        )
+
+    # ── Cols 2..N+1: parameter strips ─────────────────────────────────────────
     for i, col in enumerate(param_cols):
-        color  = PALETTE[i % len(PALETTE)]
-        ci     = i + 1
+        color = PALETTE[i % len(PALETTE)]
+        ci    = i + 2               # offset by 1 because depth is col 1
         series = ds[col].dropna()
         if series.empty: continue
 
         xmin = float(ds[col].min()); xmax = float(ds[col].max())
         pad  = max((xmax-xmin)*0.04, 0.5)
+        u    = units.get(col, "").strip()
+        hover_unit = f" {u}" if u else ""
 
         fig.add_trace(go.Scatter(
             x=ds[col], y=ds["RigTime"],
             mode="lines",
-            name=col,
+            name=_label(col, color).replace("<b style='color:" + color + "'>","").replace("</b>",""),
             line=dict(color=color, width=1.3),
             fill="tozerox",
             fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.08)",
-            hovertemplate=f"<b>{col}</b><br>%{{y|%H:%M:%S}}<br>%{{x:.2f}}<extra></extra>",
+            hovertemplate=(f"<b>{col}</b>{hover_unit}<br>"
+                           f"%{{y|%H:%M:%S}}<br>%{{x:.2f}}{hover_unit}<extra></extra>"),
         ), row=1, col=ci)
 
         fig.update_xaxes(
@@ -283,47 +334,17 @@ def build_mud_log(df, param_cols, depth_col, events_df,
             gridcolor="#e8eef4", gridwidth=1,
             linecolor="#d1dbe8", zeroline=False,
             showgrid=True, side="top",
-            title_text=f"<b style='color:{color}'>{col}</b><br>"
-                       f"<span style='color:#94a3b8;font-size:9px'>{xmin:.1f} … {xmax:.1f}</span>",
+            title_text=(_label(col, color) + "<br>"
+                        f"<span style='color:#94a3b8;font-size:9px'>"
+                        f"{xmin:.1f} … {xmax:.1f}</span>"),
             title_font=dict(size=10),
             title_standoff=2,
             row=1, col=ci,
         )
 
-    # ── Bit Depth strip (rightmost) ───────────────────────────────────────────
-    depth_ci = total_cols
-    d_series = ds[depth_col].dropna()
-    if not d_series.empty:
-        d_min = float(d_series.min()); d_max = float(d_series.max())
-
-        fig.add_trace(go.Scatter(
-            x=ds[depth_col], y=ds["RigTime"],
-            mode="lines",
-            name="Bit Depth",
-            line=dict(color="#1a2535", width=2.5),
-            fill="tozerox",
-            fillcolor="rgba(26,37,53,0.06)",
-            hovertemplate="<b>Bit Depth</b><br>%{y|%H:%M:%S}<br>%{x:.2f} m<extra></extra>",
-        ), row=1, col=depth_ci)
-
-        # Depth X axis: deeper = further right  →  range [d_min-5, d_max+5]
-        # (NOT inverted — shallower on left, deeper on right, matching the reference image)
-        fig.update_xaxes(
-            range=[d_min-5, d_max+5],
-            tickfont=dict(size=8, color="#94a3b8"),
-            gridcolor="#e8eef4", gridwidth=1,
-            linecolor="#d1dbe8", zeroline=False,
-            showgrid=True, side="top",
-            title_text=f"<b>Bit Depth (m)</b><br>"
-                       f"<span style='font-size:9px;color:#94a3b8'>{d_min:.0f} … {d_max:.0f}</span>",
-            title_font=dict(size=10, color="#1a2535"),
-            title_standoff=2,
-            row=1, col=depth_ci,
-        )
-
     # ── Shared Y axis (time, oldest at top) ───────────────────────────────────
     fig.update_yaxes(
-        autorange="reversed",          # oldest at top
+        autorange="reversed",
         tickformat="%H:%M\n%d %b",
         tickfont=dict(size=9, color="#64748b"),
         gridcolor="#e8eef4", gridwidth=1,
@@ -333,7 +354,6 @@ def build_mud_log(df, param_cols, depth_col, events_df,
         title_font=dict(size=10, color="#374151"),
         row=1, col=1,
     )
-    # Hide y-axis labels on other columns (shared)
     for ci in range(2, total_cols+1):
         fig.update_yaxes(showticklabels=False, row=1, col=ci)
 
@@ -438,7 +458,7 @@ if active_bytes is None:
 #  PARSE
 # ═══════════════════════════════════════════════════════════════════════════════
 try:
-    df = smart_parse(active_bytes, active_name)
+    df, auto_units = smart_parse(active_bytes, active_name)
 except Exception as e:
     st.error(f"**Parse error:** {e}")
     st.stop()
@@ -452,7 +472,7 @@ hl_col    = find_col(df, r'hook.?load', r'\bhl\b')
 bp_col    = find_col(df, r'block.?pos', r'blockpos')
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  COLUMN SELECTOR
+#  COLUMN SELECTOR + UNITS EDITOR
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='sec'>🔧 Column Setup</div>", unsafe_allow_html=True)
 cc1, cc2, cc3 = st.columns(3)
@@ -475,6 +495,28 @@ if not param_cols:
     st.warning("Pick at least one parameter track above."); st.stop()
 if depth_col is None:
     st.warning("Could not find a Bit Depth column."); st.stop()
+
+# ── Units editor ──────────────────────────────────────────────────────────────
+# Pre-fill with units detected from the file; user can override any of them.
+with st.expander("📐 Units (optional — shown in strip headers)", expanded=False):
+    st.caption(
+        "Units were **auto-detected from the file** where available. "
+        "Override any value here — changes apply immediately to all chart labels."
+    )
+    all_track_cols = [depth_col] + param_cols
+    n_ucols = min(4, len(all_track_cols))
+    ucols = st.columns(n_ucols)
+    units = {}
+    for idx, col in enumerate(all_track_cols):
+        default_unit = auto_units.get(col, "")
+        with ucols[idx % n_ucols]:
+            units[col] = st.text_input(
+                col,
+                value=default_unit,
+                key=f"unit_{col}",
+                placeholder="e.g. m, t, rpm",
+                label_visibility="visible",
+            )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  ACTIVITY
@@ -523,7 +565,7 @@ st.caption(
 )
 
 fig = build_mud_log(df, param_cols, depth_col, evs,
-                    show_bands, chart_height, ds_n)
+                    show_bands, chart_height, ds_n, units)
 st.plotly_chart(fig, use_container_width=True, config={
     "displayModeBar": True, "scrollZoom": True,
     "modeBarButtonsToRemove": ["lasso2d","select2d"],
