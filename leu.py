@@ -356,7 +356,7 @@ def build_mud_log(df, param_cols, depth_col, events_df,
         fig.update_xaxes(
             range=[d_min - 5, d_max + 5],
             tickfont=dict(size=8, color="#94a3b8"),
-            gridcolor="#e8eef4", gridwidth=1,
+            gridcolor="#e2e8f0", gridwidth=1, nticks=5,
             linecolor="#d1dbe8", zeroline=False,
             showgrid=True, side="top",
             title_text=(_label(depth_col) + "<br>"
@@ -393,7 +393,7 @@ def build_mud_log(df, param_cols, depth_col, events_df,
         fig.update_xaxes(
             range=[xmin - pad, xmax + pad],
             tickfont=dict(size=8, color="#94a3b8"),
-            gridcolor="#e8eef4", gridwidth=1,
+            gridcolor="#e2e8f0", gridwidth=1, nticks=5,
             linecolor="#d1dbe8", zeroline=False,
             showgrid=True, side="top",
             title_text=(_label(col, color) + "<br>"
@@ -411,7 +411,7 @@ def build_mud_log(df, param_cols, depth_col, events_df,
         tickvals=tickvals,
         ticktext=ticktext,
         tickfont=dict(size=9, color="#374151", family="Inter, sans-serif"),
-        gridcolor="#e8eef4", gridwidth=1,
+        gridcolor="#e2e8f0", gridwidth=1, nticks=5,
         linecolor="#d1dbe8", zeroline=False,
         showgrid=True,
         autorange="reversed",   # oldest at top
