@@ -405,21 +405,37 @@ def build_mud_log(df, param_cols, depth_col, events_df,
         )
 
     # ── Shared Y axis — composite tick labels (Time / Date / Depth) ───────────
+    # tickvals must be set on EVERY column so gridlines are drawn at identical
+    # positions across all strips — without this each column auto-picks its own
+    # tick positions and the horizontal gridlines don't line up visually.
     tickvals, ticktext = _make_y_ticks(df, depth_col, n_ticks=20)
 
-    fig.update_yaxes(
+    # Common Y axis style shared by all columns
+    yax_common = dict(
         tickvals=tickvals,
-        ticktext=ticktext,
-        tickfont=dict(size=9, color="#374151", family="Inter, sans-serif"),
-        gridcolor="#e2e8f0", gridwidth=1, nticks=5,
+        gridcolor="#e2e8f0", gridwidth=1,
         linecolor="#d1dbe8", zeroline=False,
         showgrid=True,
         autorange="reversed",   # oldest at top
-        title_text="",          # no axis title — the tick labels are self-explanatory
+    )
+
+    # Col 1: show the composite labels (time / date / depth)
+    fig.update_yaxes(
+        **yax_common,
+        ticktext=ticktext,
+        tickfont=dict(size=9, color="#374151", family="Inter, sans-serif"),
+        title_text="",
         row=1, col=1,
     )
+
+    # All other cols: same tickvals (so gridlines align) but no visible labels
     for ci in range(2, total_cols + 1):
-        fig.update_yaxes(showticklabels=False, row=1, col=ci)
+        fig.update_yaxes(
+            **yax_common,
+            ticktext=[""] * len(tickvals),   # empty strings = gridline but no label
+            showticklabels=False,
+            row=1, col=ci,
+        )
 
     fig.update_layout(
         height=height,
