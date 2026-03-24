@@ -2,7 +2,7 @@
 Drilling Real-Time Log Viewer
 ==============================
 • Upload Excel (.xlsx) or CSV/TXT — any format, first row = headers, second row = units (auto-skipped)
-• Mud-log style vertical strip charts:  Y = Time or Bit Depth,  X = parameter value
+• Mud-log style vertical strip charts:  Y = Time with Date + Depth annotations,  X = parameter value
 • Uploaded files are stored permanently on the server — reload any time
 """
 
@@ -252,33 +252,64 @@ def detect_events(df, depth_col):
 # ═══════════════════════════════════════════════════════════════════════════════
 #  MUD LOG — vertical strip chart
 #
-#  y_mode = "time"  →  Y axis = Rig Time  (oldest at top)
-#  y_mode = "depth" →  Y axis = Bit Depth (shallow at top, deep at bottom)
-#
-#  When y_mode = "depth":
-#   • The dedicated Bit Depth strip is hidden (it IS the Y axis)
-#   • Activity bands are drawn as horizontal depth-interval rectangles
-#   • All param traces use depth on Y instead of time
+#  Y axis = Rig Time (oldest at top)
+#  Tick labels show:  HH:MM  /  dd Mon (date, when it changes)  /  depth (m)
 # ═══════════════════════════════════════════════════════════════════════════════
+def _make_y_ticks(df, depth_col, n_ticks=20):
+    """
+    Build custom Y-axis tick labels that show:
+      Line 1: HH:MM          (time, always)
+      Line 2: dd Mon          (date — shown only when date changes from prev tick)
+      Line 3: 1234 m          (bit depth — interpolated at each tick time)
+    Returns (tickvals, ticktext) for use in update_yaxes.
+    """
+    t_min = df["RigTime"].min()
+    t_max = df["RigTime"].max()
+
+    # Evenly spaced tick timestamps
+    total_s  = (t_max - t_min).total_seconds()
+    step_s   = total_s / max(n_ticks - 1, 1)
+    tick_ts  = [t_min + pd.Timedelta(seconds=i * step_s) for i in range(n_ticks)]
+
+    # Interpolate depth at each tick time using numeric seconds
+    df_s  = (df["RigTime"] - t_min).dt.total_seconds().values
+    d_v   = df[depth_col].values
+    tick_s = [(t - t_min).total_seconds() for t in tick_ts]
+    depths = np.interp(tick_s, df_s, d_v)
+
+    # Build label strings
+    tickvals = tick_ts
+    ticktext = []
+    prev_date = None
+    for t, d in zip(tick_ts, depths):
+        time_str  = t.strftime("%H:%M")
+        date_str  = t.strftime("%d %b")
+        depth_str = f"{d:.0f} m"
+
+        if prev_date != date_str:
+            # Show date on this tick
+            label = f"<b>{time_str}</b><br><span style='color:#94a3b8;font-size:8px'>{date_str}</span><br><span style='color:#1558a0;font-size:8px'>{depth_str}</span>"
+        else:
+            label = f"<b>{time_str}</b><br><span style='color:#94a3b8;font-size:8px'>&nbsp;</span><br><span style='color:#1558a0;font-size:8px'>{depth_str}</span>"
+        ticktext.append(label)
+        prev_date = date_str
+
+    return tickvals, ticktext
+
+
 def build_mud_log(df, param_cols, depth_col, events_df,
-                  show_bands, height, ds_n, units, y_mode="time"):
+                  show_bands, height, ds_n, units):
 
     if units is None:
         units = {}
 
-    use_depth_y = (y_mode == "depth")
-
-    # In depth mode the dedicated depth strip is replaced by the Y axis itself
     n          = len(param_cols)
-    total_cols = n if use_depth_y else (1 + n)   # depth strip only in time mode
+    total_cols = 1 + n   # col 1 = Bit Depth strip, cols 2..N+1 = params
 
     step = max(1, len(df) // ds_n)
     ds   = df.iloc[::step].copy()
 
-    if use_depth_y:
-        widths = [1.0] * n
-    else:
-        widths = [0.85] + [1.0] * n   # depth strip slightly narrower on left
+    widths = [0.85] + [1.0] * n
 
     fig = make_subplots(
         rows=1, cols=total_cols,
@@ -287,36 +318,12 @@ def build_mud_log(df, param_cols, depth_col, events_df,
         horizontal_spacing=0.008,
     )
 
-    # ── Shared Y values ───────────────────────────────────────────────────────
-    if use_depth_y:
-        y_vals     = ds[depth_col]
-        y_min      = float(ds[depth_col].min())
-        y_max      = float(ds[depth_col].max())
-        y_range    = [y_min - 2, y_max + 2]   # shallow at top → NOT reversed
-        y_reversed = False
-        y_fmt      = None
-        y_title    = f"{depth_col} ({units.get(depth_col,'m')})"
-    else:
-        y_vals     = ds["RigTime"]
-        y_range    = None
-        y_reversed = True                      # oldest at top
-        y_fmt      = "%H:%M\n%d %b"
-        y_title    = "TIME"
-
     # ── Activity bands ────────────────────────────────────────────────────────
     if show_bands and events_df is not None:
         for _, ev in events_df.iterrows():
             band_color = ACT.get(ev["activity"], "#64748b")
-            if use_depth_y:
-                # horizontal bands in depth space
-                y0 = min(ev["depth_start"], ev["depth_end"])
-                y1 = max(ev["depth_start"], ev["depth_end"])
-                if y1 - y0 < 0.1: y0 -= 0.2; y1 += 0.2
-            else:
-                y0 = ev["start_time"]
-                y1 = ev["end_time"]
             for ci in range(1, total_cols + 1):
-                fig.add_hrect(y0=y0, y1=y1,
+                fig.add_hrect(y0=ev["start_time"], y1=ev["end_time"],
                               fillcolor=band_color, opacity=0.07, line_width=0,
                               row=1, col=ci)
 
@@ -329,42 +336,41 @@ def build_mud_log(df, param_cols, depth_col, events_df,
             return f"<b style='color:{color}'>{name}</b>"
         return f"<b>{name}</b>"
 
-    # ── Col 1 in TIME mode: Bit Depth strip ───────────────────────────────────
-    if not use_depth_y:
-        d_series = ds[depth_col].dropna()
-        if not d_series.empty:
-            d_min = float(d_series.min()); d_max = float(d_series.max())
-            d_unit = units.get(depth_col, "").strip()
-            hu = f" {d_unit}" if d_unit else ""
+    # ── Col 1: Bit Depth strip ────────────────────────────────────────────────
+    d_series = ds[depth_col].dropna()
+    if not d_series.empty:
+        d_min  = float(d_series.min()); d_max = float(d_series.max())
+        d_unit = units.get(depth_col, "").strip()
+        hu     = f" {d_unit}" if d_unit else ""
 
-            fig.add_trace(go.Scatter(
-                x=ds[depth_col], y=ds["RigTime"],
-                mode="lines",
-                name=_label(depth_col).replace("<b>", "").replace("</b>", ""),
-                line=dict(color="#1a2535", width=2.5),
-                fill="tozerox", fillcolor="rgba(26,37,53,0.06)",
-                hovertemplate=(f"<b>{depth_col}</b><br>"
-                               f"%{{y|%H:%M:%S}}<br>%{{x:.2f}}{hu}<extra></extra>"),
-            ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=ds[depth_col], y=ds["RigTime"],
+            mode="lines",
+            name=_label(depth_col).replace("<b>", "").replace("</b>", ""),
+            line=dict(color="#1a2535", width=2.5),
+            fill="tozerox", fillcolor="rgba(26,37,53,0.06)",
+            hovertemplate=(f"<b>{depth_col}</b><br>"
+                           f"%{{y|%H:%M:%S}}<br>%{{x:.2f}}{hu}<extra></extra>"),
+        ), row=1, col=1)
 
-            fig.update_xaxes(
-                range=[d_min - 5, d_max + 5],
-                tickfont=dict(size=8, color="#94a3b8"),
-                gridcolor="#e8eef4", gridwidth=1,
-                linecolor="#d1dbe8", zeroline=False,
-                showgrid=True, side="top",
-                title_text=(_label(depth_col) + "<br>"
-                            f"<span style='font-size:9px;color:#94a3b8'>"
-                            f"{d_min:.0f} … {d_max:.0f}</span>"),
-                title_font=dict(size=10, color="#1a2535"),
-                title_standoff=2,
-                row=1, col=1,
-            )
+        fig.update_xaxes(
+            range=[d_min - 5, d_max + 5],
+            tickfont=dict(size=8, color="#94a3b8"),
+            gridcolor="#e8eef4", gridwidth=1,
+            linecolor="#d1dbe8", zeroline=False,
+            showgrid=True, side="top",
+            title_text=(_label(depth_col) + "<br>"
+                        f"<span style='font-size:9px;color:#94a3b8'>"
+                        f"{d_min:.0f} … {d_max:.0f}</span>"),
+            title_font=dict(size=10, color="#1a2535"),
+            title_standoff=2,
+            row=1, col=1,
+        )
 
     # ── Parameter strips ──────────────────────────────────────────────────────
     for i, col in enumerate(param_cols):
         color  = PALETTE[i % len(PALETTE)]
-        ci     = i + 1 if use_depth_y else i + 2
+        ci     = i + 2
         series = ds[col].dropna()
         if series.empty: continue
 
@@ -373,23 +379,15 @@ def build_mud_log(df, param_cols, depth_col, events_df,
         u    = units.get(col, "").strip()
         hu   = f" {u}" if u else ""
 
-        if use_depth_y:
-            y_data = ds[depth_col]
-            hover  = (f"<b>{col}</b><br>"
-                      f"Depth: %{{y:.2f}} m<br>Value: %{{x:.2f}}{hu}<extra></extra>")
-        else:
-            y_data = ds["RigTime"]
-            hover  = (f"<b>{col}</b><br>"
-                      f"%{{y|%H:%M:%S}}<br>%{{x:.2f}}{hu}<extra></extra>")
-
         fig.add_trace(go.Scatter(
-            x=ds[col], y=y_data,
+            x=ds[col], y=ds["RigTime"],
             mode="lines",
             name=f"{col}{hu}",
             line=dict(color=color, width=1.3),
             fill="tozerox",
             fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.08)",
-            hovertemplate=hover,
+            hovertemplate=(f"<b>{col}</b><br>"
+                           f"%{{y|%H:%M:%S}}<br>%{{x:.2f}}{hu}<extra></extra>"),
         ), row=1, col=ci)
 
         fig.update_xaxes(
@@ -406,24 +404,20 @@ def build_mud_log(df, param_cols, depth_col, events_df,
             row=1, col=ci,
         )
 
-    # ── Shared Y axis ─────────────────────────────────────────────────────────
-    yax = dict(
-        tickfont=dict(size=9, color="#64748b"),
+    # ── Shared Y axis — composite tick labels (Time / Date / Depth) ───────────
+    tickvals, ticktext = _make_y_ticks(df, depth_col, n_ticks=20)
+
+    fig.update_yaxes(
+        tickvals=tickvals,
+        ticktext=ticktext,
+        tickfont=dict(size=9, color="#374151", family="Inter, sans-serif"),
         gridcolor="#e8eef4", gridwidth=1,
         linecolor="#d1dbe8", zeroline=False,
         showgrid=True,
-        title_text=y_title,
-        title_font=dict(size=10, color="#374151"),
+        autorange="reversed",   # oldest at top
+        title_text="",          # no axis title — the tick labels are self-explanatory
+        row=1, col=1,
     )
-    if y_fmt:
-        yax["tickformat"] = y_fmt
-    if y_range:
-        yax["range"]      = y_range
-        yax["autorange"]  = False
-    else:
-        yax["autorange"]  = "reversed" if y_reversed else True
-
-    fig.update_yaxes(**yax, row=1, col=1)
     for ci in range(2, total_cols + 1):
         fig.update_yaxes(showticklabels=False, row=1, col=ci)
 
@@ -437,7 +431,7 @@ def build_mud_log(df, param_cols, depth_col, events_df,
             font=dict(size=10), bgcolor="rgba(255,255,255,0.92)",
             bordercolor="#d1dbe8", borderwidth=1,
         ),
-        margin=dict(l=65, r=15, t=90, b=30),
+        margin=dict(l=90, r=15, t=90, b=30),
         hovermode="y unified",
         hoverlabel=dict(bgcolor="#fff", bordercolor="#d1dbe8",
                         font=dict(color="#1a2535", size=11)),
@@ -579,31 +573,7 @@ with st.expander("Units — optional, shown in strip headers", expanded=False):
             units[col] = st.text_input(col, value=default_unit, key=f"unit_{col}",
                                        placeholder="e.g. m, t, rpm")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Y-AXIS MODE SELECTOR
-# ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='sec'>Chart Y Axis</div>", unsafe_allow_html=True)
 
-y_col1, y_col2 = st.columns([2, 5])
-with y_col1:
-    y_mode = st.radio(
-        "Y axis",
-        options=["time", "depth"],
-        format_func=lambda x: "Rig Time" if x == "time" else "Bit Depth",
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-with y_col2:
-    if y_mode == "time":
-        st.caption(
-            "Strips share a **time axis** — oldest at top, newest at bottom. "
-            "The leftmost strip shows Bit Depth as a reference track."
-        )
-    else:
-        st.caption(
-            "Strips share a **depth axis** — shallow at top, deeper at bottom. "
-            "Bit Depth becomes the Y axis itself; all parameters are plotted against measured depth."
-        )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  ACTIVITY
@@ -644,7 +614,7 @@ st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 st.markdown("<div class='sec'>Mud Log — Vertical Strip Chart</div>", unsafe_allow_html=True)
 
 fig = build_mud_log(df, param_cols, depth_col, evs,
-                    show_bands, chart_height, ds_n, units, y_mode)
+                    show_bands, chart_height, ds_n, units)
 st.plotly_chart(fig, use_container_width=True, config={
     "displayModeBar": True, "scrollZoom": True,
     "modeBarButtonsToRemove": ["lasso2d", "select2d"],
